@@ -365,10 +365,35 @@ bool check_enough_filedescriptors() {
         return false;
     }
 
+    // Desired file descriptors needed for listening fds, worker threads, plus safety headroom
+    int fd_needed = (o.proc.http_workers * 2) + no_listen_fds + 6;
+
+    // Apply a robust baseline safety floor (at least 1024 or higher based on workers)
+    rlim_t target_fds = std::max((rlim_t)1024, (rlim_t)(fd_needed));
+
+    E2LOGGER_info("Current open files limits, cur=", rlim.rlim_cur, ", max=", rlim.rlim_max, ", target=", target_fds);
+
+    // If current soft limit is below what we need, try raising it up to the hard limit
+    if (rlim.rlim_cur < target_fds) {
+        struct rlimit new_rlim = rlim;
+        new_rlim.rlim_cur = target_fds;
+        if (new_rlim.rlim_max < target_fds) {
+            new_rlim.rlim_max = target_fds; // Try to bump hard limit too if permitted
+        }
+
+        if (setrlimit(RLIMIT_NOFILE, &new_rlim) != 0) {
+            // If setrlimit fails, check if we still meet the bare minimum check below
+            E2LOGGER_error("Failed to automatically raise file descriptor limit via setrlimit: ", errno);
+        } else {
+            // Re-fetch to confirm what the kernel actually granted
+            getrlimit(RLIMIT_NOFILE, &rlim);
+            E2LOGGER_warning("Open files limits set to rlim cur=", rlim.rlim_cur, ", max=", rlim.rlim_max);
+        }
+    }
+
     // enough fds needed for listening_fds + logger + ipcs + stdin/out/err
     // in addition to two for each worker thread
     int max_free_fds = rlim.rlim_cur - (no_listen_fds + 6);
-    int fd_needed = (o.proc.http_workers * 2) + no_listen_fds + 6;
 
     if (((o.proc.http_workers * 2)) > max_free_fds) {
         E2LOGGER_error("httpworkers option in e2guardian.conf has a value too high for current file id limit (",
@@ -377,7 +402,7 @@ bool check_enough_filedescriptors() {
         E2LOGGER_error("in this configuration.");
         E2LOGGER_error("Reduce httpworkers ");
         E2LOGGER_error("Or increase the filedescriptors available with ulimit -n to at least=", fd_needed);
-        return false; // we can't have rampant proccesses can we?
+        return false; // we can't have rampant processes can we?
     }
 
     return true;
