@@ -83,13 +83,15 @@ int CSPlugin::makeTempFile(String *filename)
 {
     int tempfilefd;
     String tempfilepath(o.content.download_dir.c_str());
-    tempfilepath += "/csXXXXXX";
+    tempfilepath += "/csXXXXXXXXXX";
     char *tempfilepatharray = new char[tempfilepath.length() + 1];
     strcpy(tempfilepatharray, tempfilepath.toCharArray());
     //	mode_t mask = umask(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP); // this mask is reversed
     umask(0007); // only allow access to e2g user and group
-    if ((tempfilefd = mkstemp(tempfilepatharray)) < 1) {
-        E2LOGGER_error("Could not create temp file for contentscanner.");
+    errno = 0;
+    if ((tempfilefd = mkstemp(tempfilepatharray)) == -1) {
+        int saved_errno = errno;
+        E2LOGGER_error("Could not create temp file for contentscanner, errno: ", String(saved_errno), ", ", String(strerror(saved_errno)));
         tempfilefd = -1;
     } else {
         (*filename) = tempfilepatharray;
