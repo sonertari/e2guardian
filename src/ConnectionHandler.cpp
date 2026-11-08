@@ -160,6 +160,19 @@ std::string ConnectionHandler::miniURLEncode(const char *s) {
     return encoded;
 }
 
+// Construct domain-only URL (scheme + host + /) to prevent per-path hash fragmentation
+String ConnectionHandler::getDomainURL(String *url) {
+    String domain_url = *url;
+    if (domain_url.contains("://")) {
+        domain_url = domain_url.after("://");
+    }
+    domain_url = domain_url.contains("/") ? domain_url.before("/") : domain_url;
+    if (domain_url.startsWith("www.")) {
+        domain_url = domain_url.after("www.");
+    }
+    return domain_url;
+}
+
 // create a temporary bypass URL for the banned page
 String ConnectionHandler::hashedURL(String *url, int filtergroup, std::string *clientip,
                                     bool infectionbypass, std::string *user) {
@@ -173,15 +186,12 @@ String ConnectionHandler::hashedURL(String *url, int filtergroup, std::string *c
         magic += user->c_str();
     magic += timecode;
     String res(infectionbypass ? "GIBYPASS=" : "GBYPASS=");
-    if (!url->after("://").contains("/")) {
-        String newurl((*url));
-        newurl += "/";
-        res += newurl.md5(magic.toCharArray());
-    } else {
-        res += url->md5(magic.toCharArray());
-    }
+
+    String domain_url = getDomainURL(url);
+
+    res += domain_url.md5(magic.toCharArray());
     res += timecode;
-    DEBUG_debug(" -generate Bypass hashedurl data ", clientip, " ", *url, " ", clientuser, " ", timecode, " result ", res);
+    DEBUG_debug(" -generate Bypass hashedurl data ", clientip, " ", *url, " ", domain_url, " ", clientuser, " ", timecode, " result ", res);
     return res;
 }
 
@@ -192,10 +202,12 @@ String ConnectionHandler::hashedCookie(String *url, const char *magic, std::stri
     data += clientip->c_str();
     data += clientuser;
     data += timecode;
-    DEBUG_debug(" -generate Bypass hashedCookie data ", clientip, " ", *url, " ", clientuser, " ", timecode);
-    String res(url->md5(data.toCharArray()));
+
+    String domain_url = getDomainURL(url);
+
+    String res(domain_url.md5(data.toCharArray()));
     res += timecode;
-    DEBUG_debug(" -Bypass hashedCookie="+ res);
+    DEBUG_debug(" -generate Bypass hashedCookie data ", clientip, " ", *url, " ", domain_url, " ", clientuser.c_str(), " ", timecode, " result ", res);
     return res;
 }
 
@@ -214,6 +226,9 @@ int ConnectionHandler::isBypassURL(String url, const char *magic, const char *cl
 
     String url_left((url).before(btype.c_str()));
     url_left.chop(); // remove the ? or &
+
+    url_left = getDomainURL(&url_left);
+
     String url_right((url).after(btype.c_str()));
     String url_hash(url_right.subString(0, 32));
     String url_time(url_right.after(url_hash.toCharArray()));
@@ -233,6 +248,7 @@ int ConnectionHandler::isBypassURL(String url, const char *magic, const char *cl
 
     if (hashed != url_hash) {
         DEBUG_debug("URL ", btype, " hash mismatch");
+        DEBUG_bypass("URL ", btype, " hash mismatch, hashed=", hashed, ", url_hash=", url_hash);
         return 0;
     }
 
@@ -264,6 +280,9 @@ bool ConnectionHandler::isScanBypassURL(String url, const char *magic, const cha
 
     String url_left((url).before("GSBYPASS="));
     url_left.chop(); // remove the ? or &
+
+    url_left = getDomainURL(&url_left);
+
     String url_right((url).after("GSBYPASS="));
 
     String url_hash(url_right.subString(0, 32));
@@ -758,7 +777,7 @@ int ConnectionHandler::handleConnection(Socket &peerconn, String &ip, bool ismit
             }
 //
             // do this normalisation etc just the once at the start.
-            checkme.setURL(ismitm);
+            checkme.setURL(ismitm, checkme.is_ssl);
 
             if(o.log.log_requests) {
             //if (e2logger.isEnabled(LoggerSource::requestlog)) {
@@ -1056,10 +1075,8 @@ int ConnectionHandler::handleConnection(Socket &peerconn, String &ip, bool ismit
                 // redirect user to URL with GBYPASS parameter no longer appended
                 String outhead = "HTTP/1.1 302 Redirect\r\n";
                 outhead += "Set-Cookie: GBYPASS=";
-                outhead += header.hashedCookie(&ud, ldl->fg[filtergroup]->cookie_magic.c_str(), &clientip,
+                outhead += header.hashedCookie(&ud, ldl->fg[filtergroup]->magic.c_str(), &clientip,
                                         checkme.bypasstimestamp, clientuser).toCharArray();
-               // outhead += hashedCookie(&ud, ldl->fg[filtergroup]->cookie_magic.c_str(), &clientip,
-                //                        checkme.bypasstimestamp).toCharArray();
                 outhead += "; path=/; domain=.";
                 outhead += ud;
                 outhead += "\r\n";
@@ -2885,7 +2902,7 @@ bool ConnectionHandler::checkByPass(NaughtyFilter &checkme, std::shared_ptr<LOpt
             if (ud.startsWith("www.")) {
                 ud = ud.after("www.");
             }
-            if (header.isBypassCookie(ud, ldl->fg[filtergroup]->cookie_magic.c_str(),
+            if (header.isBypassCookie(ud, ldl->fg[filtergroup]->magic.c_str(),
                                       clientip.c_str(), clientuser.c_str())) {
                 DEBUG_debug(" -Bypass cookie match");
                 checkme.iscookiebypass = true;
@@ -3215,7 +3232,7 @@ int ConnectionHandler::handleProxyTLSConnection(Socket &peerconn, String &ip, So
 //
                 // do all of this normalisation etc just the once at the start.
                 checkme.url = "https://" + checkme.url;
-                checkme.setURL(checkme.url);
+                checkme.setURL(checkme.url, checkme.is_ssl);
                 checkme.nomitm = false;
                 gettimeofday(&checkme.thestart, NULL);
 
@@ -3760,7 +3777,7 @@ int ConnectionHandler::handleICAPreqmod(Socket &peerconn, String &ip, NaughtyFil
     bool authed = false;
     String clientip = ip;
     // do all of this normalisation etc just the once at the start.
-    checkme.setURL();
+    checkme.setURL(false, icaphead.is_ssl);
     String res_hdr, res_body, req_hdr, req_body;
 
     // checks for bad URLs to prevent security holes/domain obfuscation.
@@ -3881,12 +3898,9 @@ int ConnectionHandler::handleICAPreqmod(Socket &peerconn, String &ip, NaughtyFil
 
     //
     // Start of by pass
-    if (!checkme.is_ssl) {
-
-        if (checkByPass(checkme, ldl, icaphead.HTTPrequest, peerconn, peerconn, clientip)
-            && sendScanFile(peerconn, checkme, true, &icaphead)) {
-            return 0;      // returns only when Scanfile sent. Sets checkme.isbypass if it is a bypass.
-        }
+    if (checkByPass(checkme, ldl, icaphead.HTTPrequest, peerconn, peerconn, clientip)
+        && sendScanFile(peerconn, checkme, true, &icaphead)) {
+        return 0;      // returns only when Scanfile sent. Sets checkme.isbypass if it is a bypass.
     }
     //
     // End of scan by pass
@@ -3922,15 +3936,13 @@ int ConnectionHandler::handleICAPreqmod(Socket &peerconn, String &ip, NaughtyFil
 
 	String outhead = "HTTP/1.1 302 Redirect\r\n";
         outhead += "Set-Cookie: GBYPASS=";
-        outhead += icaphead.HTTPrequest.hashedCookie(&ud, ldl->fg[filtergroup]->cookie_magic.c_str(), &clientip,
+        outhead += icaphead.HTTPrequest.hashedCookie(&ud, ldl->fg[filtergroup]->magic.c_str(), &clientip,
                                 checkme.bypasstimestamp, clientuser).toCharArray();
-      //  outhead += hashedCookie(&ud, ldl->fg[filtergroup]->cookie_magic.c_str(), &clientip,
-       //                         checkme.bypasstimestamp).toCharArray();
         outhead += "; path=/; domain=.";
         outhead += ud;
         outhead += "\r\n";
         outhead += "Location: ";
-        outhead += icaphead.HTTPrequest.getUrl(true);
+        outhead += icaphead.HTTPrequest.getUrl(true, icaphead.is_ssl);
         outhead += "\r\n";
         outhead += "\r\n";
         icaphead.out_res_header = outhead;
@@ -4042,7 +4054,7 @@ int ConnectionHandler::handleICAPresmod(Socket &peerconn, String &ip, NaughtyFil
     std::deque<CSPlugin *> responsescanners;
 
     // do all of this normalisation etc just the once at the start.
-    checkme.setURL();
+    checkme.setURL(false, icaphead.is_ssl);
 
     overide_persist = false;
     if (icaphead.icap_com.filtergroup < 0)    //i.e. no X-ICAP-E2G

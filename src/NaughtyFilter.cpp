@@ -72,25 +72,25 @@ NaughtyFilter::NaughtyFilter(HTTPHeader &request, HTTPHeader &response, auth_rec
     ch_isiphost.comp(",*[a-z|A-Z].*");
     reset();
 }
-void NaughtyFilter::setURL(bool set_ismitm) {
+void NaughtyFilter::setURL(bool set_ismitm, bool is_ssl) {
     // do all of this normalisation etc just the once at the start.
-    url = request_header->getUrl(false, false);
+    url = request_header->getUrl(false, is_ssl);
     baseurl = url;
     baseurl.removeWhiteSpace();
     baseurl.toLower();
     baseurl.removePTP();
-    logurl = request_header->getLogUrl(false, set_ismitm);
+    logurl = request_header->getLogUrl(false, is_ssl);
     urld = request_header->decode(url);
     urldomain = url.getHostname();
     urldomain.toLower();
     String temp;
-    temp = request_header->getUrl(true,false);  // get url with port
+    temp = request_header->getUrl(true, is_ssl);  // get url with port
     urldomainport = temp.getHostname();
     urldomainport.toLower();
 
     connect_site = urldomain;
     isiphost = isIPHostnameStrip(urldomain);
-    is_ssl = request_header->requestType().startsWith("CONNECT");
+    this->is_ssl = request_header->requestType().startsWith("CONNECT") || is_ssl;
     ishead = request_header->requestType().startsWith("HEAD");
     isconnect = is_ssl;
     ismitm = set_ismitm;
@@ -99,7 +99,7 @@ void NaughtyFilter::setURL(bool set_ismitm) {
     docsize = 0;
 }
 
-void NaughtyFilter::setURL(String &sni) {
+void NaughtyFilter::setURL(String &sni, bool is_ssl) {
     // do all of this normalisation etc just the once at the start.
     url = sni;
     baseurl = url;
@@ -114,6 +114,7 @@ void NaughtyFilter::setURL(String &sni) {
     isiphost = isIPHostnameStrip(urldomain);
     if (baseurl == urldomain)
         issiteonly = true;
+    this->is_ssl = is_ssl;
     docsize = 0;
 }
 

@@ -125,6 +125,8 @@ class ConnectionHandler
         String *url, NaughtyFilter *checkme, std::string *clientuser, std::string *clientip,
         int filtergroup, bool ispostblock, int headersent, bool wasinfected, bool scanerror, bool forceshow = false);
 
+    String getDomainURL(String *url);
+
     // create temporary ban bypass URLs/cookies
     String hashedURL(String *url, int filtergroup, std::string *clientip, bool infectionbypass, std::string *user);
     // is this a temporary filter bypass URL?

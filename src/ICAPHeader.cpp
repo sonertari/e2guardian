@@ -174,6 +174,11 @@ void ICAPHeader::checkheader(bool allowpersistent)
             pclientuser = &(*i);
             username = pclientuser->after(": ");
             username.chop();
+        } else if (i->startsWithLower("x-proto:")) {
+            pxproto = &(*i);
+            String t = pxproto->after(": ");
+            t.chop();
+            is_ssl = t.contains("http") && (t != "http"); // https, http2, http3
         } else if (i->startsWithLower("x-icap-e2g:")) {
             String t = *i;
             t.chop();   // remove '\r'
@@ -611,12 +616,12 @@ bool ICAPHeader::in(Socket *sock, bool allowpersistent)
     if(encap_recs.size() > 0) {
         for (std::deque<encap_rec>::iterator i = encap_recs.begin(); i < encap_recs.end(); i++) {
             if (i->name == "req-hdr") {
-                req_hdr_flag = HTTPrequest.in(sock);
+                req_hdr_flag = HTTPrequest.in(sock, false, is_ssl);
                 if (!req_hdr_flag)
                     return false;
                 req_hdr = i->value;
             } else if (i->name == "res-hdr") {
-                res_hdr_flag = HTTPresponse.in(sock);
+                res_hdr_flag = HTTPresponse.in(sock, false, is_ssl);
                 if (!res_hdr_flag)
                     return false;
                 res_hdr = i->value;

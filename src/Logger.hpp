@@ -288,8 +288,10 @@ extern Logger e2logger;
   if (e2logger.isEnabled(LoggerSource::storytrace)) \
     e2logger.vlog(LoggerSource::storytrace, (const std::string) "", (const std::string) "", (int) 0,  __VA_ARGS__)
 
-
 #ifdef DEBUG_HIGH
+ #define DEBUG_bypass(...) \
+       e2logger.vlog(LoggerSource::info,  __func__, __FILE__,__LINE__, __VA_ARGS__)
+
  #define DEBUG_icap(...) \
     if (e2logger.isEnabled(LoggerSource::icap)) \
        e2logger.vlog(LoggerSource::icap,  __func__, __FILE__,__LINE__, __VA_ARGS__)

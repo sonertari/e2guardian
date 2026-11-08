@@ -49,7 +49,7 @@ class HTTPHeader
     // network communication funcs
 
     void setTimeout(int t);
-    bool in(Socket *sock, bool allowpersistent = false );
+    bool in(Socket *sock, bool allowpersistent = false, bool is_ssl = false);
     bool in_handle_100(Socket *sock, bool allowpersistent = false, bool expect_100 = false );
 
     void setClientIP(String &ip);
@@ -167,7 +167,7 @@ class HTTPHeader
     void makeTransparent(bool incoming);
     // modifies the URL in all relevant header lines after a regexp search and replace
     // setURL Code originally from from Ton Gorter 2004
-    void setURL(String &url);
+    void setURL(String &url, bool is_ssl);
 
     // modifies connect site only - leaves other headers alone
     void setConnect(String &con_site);
@@ -216,6 +216,8 @@ class HTTPHeader
         else
             is_response = false;
     };
+
+    String getDomainURL(String *url);
 
     // generate bypass hashed url
     String hashedURL(String *url,  std::string *clientip,
@@ -274,7 +276,7 @@ private:
     std::string s_clientip;
 
     // check & fix headers from servers that don't obey standards
-    void checkheader(bool allowpersistent);
+    void checkheader(bool allowpersistent, bool is_ssl);
     bool checkfirstheaderline();
 
     // convert %xx back to original character

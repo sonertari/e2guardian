@@ -721,7 +721,7 @@ bool StoryBoard::runFunct(unsigned int fID, NaughtyFilter &cm) {
                     break;
                 case SB_FUNC_SETMODURL:
                     cm.urlmodified = true;
-                    cm.request_header->setURL(cm.result);
+                    cm.request_header->setURL(cm.result, cm.is_ssl);
                     cm.url = cm.result;
                     cm.baseurl = cm.url;
                     cm.baseurl.removeWhiteSpace();

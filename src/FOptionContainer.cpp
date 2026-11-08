@@ -749,12 +749,6 @@ bool FOptionContainer::read(const char *filename) {
                 magic = s;
             }
             DEBUG_debug("Setting magic key to '", magic, "'");
-
-            // Create the Bypass Cookie magic key
-            cookie_magic = std::string(16u, ' ');
-            for (int i = 0; i < 16; i++) {
-                cookie_magic[i] = (rand() % 26) + 'A';
-            }
         }
 
         infection_bypass_mode = findoptionI("infectionbypass");

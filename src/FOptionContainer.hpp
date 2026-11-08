@@ -82,7 +82,6 @@ public:
     std::string name;
     std::string magic;
     std::string imagic;
-    std::string cookie_magic;
     std::string cgi_magic;
 
 #ifdef ENABLE_EMAIL

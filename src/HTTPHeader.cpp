@@ -546,10 +546,10 @@ void HTTPHeader::setConnect(String &con_site) {
 
 // modifies the URL in all relevant header lines after a regexp search and replace
 // setURL Code originally from from Ton Gorter 2004
-void HTTPHeader::setURL(String &url)
+void HTTPHeader::setURL(String &url, bool is_ssl)
 {
     String hostname;
-    bool https = (url.before("://") == "https");
+    bool https = (url.before("://") == "https") || is_ssl;
     if(requestType() == "CONNECT"){
         https = true;
     }
@@ -864,7 +864,7 @@ void HTTPHeader::dbshowheader(bool outgoing)
 // fix bugs in certain web servers that don't obey standards.
 // actually, it's us that don't obey standards - HTTP RFC says header names
 // are case-insensitive. - Anonymous SF Poster, 2006-02-23
-void HTTPHeader::checkheader(bool allowpersistent)
+void HTTPHeader::checkheader(bool allowpersistent, bool is_ssl)
 {
     bool outgoing = !is_response;
 //    if (header.front().startsWith("HT")) {
@@ -1046,8 +1046,8 @@ if(!icap) {
 
     // Normalise request headers (fix host, port, first line of header, etc. to all be consistent)
     if (outgoing) {
-        String newurl(getUrl(true));
-        setURL(newurl);
+        String newurl(getUrl(true, is_ssl));
+        setURL(newurl, is_ssl);
     }
 }
 
@@ -1093,21 +1093,23 @@ String HTTPHeader::getLogUrl(bool withport, bool isssl)
     return answer;
 }
 
-String HTTPHeader::getUrl(bool withport, bool isssl)
+String HTTPHeader::getUrl(bool withport, bool is_ssl)
 {
     // Version of URL *with* port is not cached,
     // as vast majority of our code doesn't like
     // port numbers in URLs.
     if (cachedurl.length() > 0 && !withport)
         return cachedurl;
+
     port = 80;
-    bool https = false;
-    if (isssl) {
-        mitm = isssl;
+    bool https = is_ssl; // Initialize https scheme state from is_ssl parameter
+    if (is_ssl) {
+        mitm = is_ssl;
         isdirect = true;
+        port = 443;
     }
 
-    if ( header.size() == 0)
+    if (header.size() == 0)
     {
         String ans;
         return ans;
@@ -1150,7 +1152,9 @@ String HTTPHeader::getUrl(bool withport, bool isssl)
                     hostname.chop();
                 if (withport && (port != (https ? 443 : 80)))
                     hostname += ":" + String(port);
-                hostname = "http://" + hostname;
+
+                // Dynamic scheme selection based on HTTPS/is_ssl context
+                hostname = (https ? "https://" : "http://") + hostname;
                 answer = hostname + answer;
             }
             // Squid doesn't like requests in this format. Work around the fact.
@@ -1209,13 +1213,30 @@ String HTTPHeader::url()
     return getUrl();
 }
 
+// TODO: Make this a util function to use in ConnectionHandler too
+// Construct domain-only URL (scheme + host + /) to prevent per-path hash fragmentation
+String HTTPHeader::getDomainURL(String *url) {
+    String domain_url = *url;
+    if (domain_url.contains("://")) {
+        domain_url = domain_url.after("://");
+    }
+    domain_url = domain_url.contains("/") ? domain_url.before("/") : domain_url;
+
+    // TODO: We actually need a Public Suffix Lists and a tld extraction library
+    // This is just a quick fix
+    if (domain_url.startsWith("www.")) {
+        domain_url = domain_url.after("www.");
+    }
+    return domain_url;
+}
+
 // *
 // *
 // * Bypass URL/Cookie funcs
 // *
 // *
 // create a temporary bypass URL for the banned page
-String HTTPHeader::hashedURL(String *url,  std::string *clientip,
+String HTTPHeader::hashedURL(String *url, std::string *clientip,
                                     bool infectionbypass, std::string *user, FOptionContainer &fdl, bool fakecgi) {
     // filter/virus bypass hashes last for a certain time only
     String timecode(time(NULL) + (infectionbypass ? fdl.infection_bypass_mode
@@ -1229,19 +1250,18 @@ String HTTPHeader::hashedURL(String *url,  std::string *clientip,
     String res(infectionbypass ? "GIBYPASS=" : "GBYPASS=");
     if (fakecgi) // it is an oversized file bypass
         res = "GOSBYPASS=";
-    String hash;
-    if (!url->after("://").contains("/")) {
-        String newurl((*url));
-        newurl += "/";
-        hash = newurl.md5(magic.toCharArray());
-    } else {
-        hash = url->md5(magic.toCharArray());
-    }
+
+    String domain_url = getDomainURL(url);
+
+    String hash = domain_url.md5(magic.toCharArray());
+
     if (fakecgi && fdl.cgi_bypass)     //used for oversized files in fancy download manager
         hash = hash.md5(fdl.cgi_magic.c_str());
     res += hash;
     res += timecode;
-    DEBUG_debug(" -generate Bypass hashedurl data ", clientip, " ", *url, " ", user, " ", timecode, " result ", res);
+
+    DEBUG_debug(" -generate Bypass hashedurl data ", clientip, " ", domain_url, " ", user, " ", timecode, " result ", res);
+    DEBUG_bypass("hashedURL -generate Bypass hashedurl data ", clientip->c_str(), " ", *url, " ", domain_url, " ", String(user->c_str()), " ", timecode, " ", hash, " ", magic, " result ", res);
     return res;
 }
 
@@ -1253,11 +1273,15 @@ String HTTPHeader::hashedCookie(String *url, const char *magic, std::string *cli
     //   if(ldl->fg[filtergroup]->bypass_v2)
     data += user;
     data += timecode;
-    DEBUG_debug(" -generate Bypass hashedCookie data ", clientip, " ", *url, " ", user, " ", timecode);
-    String res(url->md5(data.toCharArray()));
+
+    String domain_url = getDomainURL(url);
+
+    String hash = domain_url.md5(data.toCharArray());
+    String res(hash);
     res += timecode;
 
     DEBUG_debug(" -Bypass hashedCookie=", res );
+    DEBUG_bypass("hashedCookie -generate Bypass hashedurl data ", clientip->c_str(), " ", *url, " ", domain_url, " ", String(user.c_str()), " ", timecode, " ", hash, " ", magic, " result ", res);
     return res;
 }
 
@@ -1338,13 +1362,16 @@ String HTTPHeader::getCookie(const char *cookie)
                 if (line.contains(";")) {
                     line = line.before(";");
                 }
+                line.removeWhiteSpace();
+                DEBUG_bypass("Found bypass cookie:", line );
+                return line;
             }
             // break;  // Technically there should be only one Cookie: header, but...
         }
     }
-    line.removeWhiteSpace();
-    DEBUG_debug("Found cookie:", line );
-    return line;
+    DEBUG_debug("Cannot find bypass cookie:", line );
+    DEBUG_debug("Cannot find bypass cookie:", line );
+    return "";
 }
 
 // add cookie with given name & value to outgoing headers
@@ -1377,10 +1404,12 @@ bool HTTPHeader::isBypassCookie(String url, const char *magic, const char *clien
     mymagic += user;
     mymagic += cookietime;
     bool matched = false;
+    String orig_url = url;
     while (url.contains(".")) {
         String hashed(url.md5(mymagic.toCharArray()));
         DEBUG_debug("Bypass cookie:", cookiehash, " hashed: ", hashed, " contains ", clientip, " ", user, " ", url, " ", cookietime);
         if (hashed == cookiehash) {
+            DEBUG_bypass("Bypass cookie matched:", cookiehash, " hashed: ", hashed, " contains ", clientip, " ", user, " ", url, " ", cookietime);
             matched = true;
             break;
         }
@@ -1388,12 +1417,14 @@ bool HTTPHeader::isBypassCookie(String url, const char *magic, const char *clien
     }
     if (not matched) {
         DEBUG_debug("Cookie GBYPASS not match");
+        DEBUG_bypass("Cookie GBYPASS not match=", orig_url);
         return false;
     }
     time_t timen = time(NULL);
     time_t timeu = cookietime.toLong();
     if (timeu < timen) {
-        DEBUG_debug("Cookie GBYPASS expired: ", timeu, " ", timen );
+        DEBUG_debug("Cookie GBYPASS expired: ", timeu, " ", timen);
+        DEBUG_bypass("Cookie GBYPASS expired: ", timeu, " ", timen, " ", orig_url);
         return false;
     }
     return true;
@@ -1802,7 +1833,7 @@ bool HTTPHeader::in_handle_100(Socket *sock, bool allowpersistent, bool expect_1
     return false;
 }
 
-bool HTTPHeader::in(Socket *sock, bool allowpersistent)
+bool HTTPHeader::in(Socket *sock, bool allowpersistent, bool is_ssl)
 {
     if (dirty)
         reset();
@@ -1926,7 +1957,7 @@ bool HTTPHeader::in(Socket *sock, bool allowpersistent)
         DEBUG_debug("first line =  ", header[0]);
     }
 
-    checkheader(allowpersistent); // sort out a few bits in the header
+    checkheader(allowpersistent, is_ssl); // sort out a few bits in the header
 
     DEBUG_debug("isProxyRequest is ", isProxyRequest);
     return true;

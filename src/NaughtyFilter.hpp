@@ -180,8 +180,8 @@ class NaughtyFilter
     NaughtyFilter(HTTPHeader &request, HTTPHeader &response, auth_rec &authrecin);
     void reset();
 
-    void setURL(bool set_ismitm = false);
-    void setURL(String &sni);
+    void setURL(bool set_ismitm = false, bool is_ssl = false);
+    void setURL(String &sni, bool is_ssl);
 
     void checkme(const char *rawbody, off_t rawbodylen, const String *url, const String *domain,
         FOptionContainer* &foc, unsigned int phraselist, int limit, bool searchterms = false);

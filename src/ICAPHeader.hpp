@@ -52,7 +52,7 @@ class ICAPHeader
     String ISTag;
     String username;
     String clientip;
-
+    bool is_ssl = false;
 
     int req_hdr = 0;
     int res_hdr = 0;
@@ -124,7 +124,7 @@ class ICAPHeader
 
     void removeEncoding(int newlen);
 
-    void setURL(String &url);
+    void setURL(String &url, bool is_ssl);
     // do URL decoding (%xx) on string
     // decode everything, or just numbers, letters and -
     static String decode(const String &s, bool decodeAll = false);
@@ -180,6 +180,7 @@ class ICAPHeader
     String *pupgrade;
     String *pclientip;
     String *pclientuser;
+    String *pxproto;
     String method;
 
 
