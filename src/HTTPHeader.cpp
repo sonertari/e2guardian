@@ -12,6 +12,7 @@
 #include "OptionContainer.hpp"
 #include "FDTunnel.hpp"
 #include "Logger.hpp"
+#include "SimplePSL.hpp"
 
 #include <unistd.h>
 #include <sys/socket.h>
@@ -1223,10 +1224,8 @@ String HTTPHeader::getDomainURL(String *url) {
     domain_url = domain_url.contains("/") ? domain_url.before("/") : domain_url;
 
     // TODO: We actually need a Public Suffix Lists and a tld extraction library
-    // This is just a quick fix
-    if (domain_url.startsWith("www.")) {
-        domain_url = domain_url.after("www.");
-    }
+    domain_url = SimplePSL::getRegistrableDomain(domain_url);
+
     return domain_url;
 }
 

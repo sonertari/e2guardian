@@ -15,6 +15,7 @@
 #include "Queue.hpp"
 #include "ImageContainer.hpp"
 #include "Logger.hpp"
+#include "SimplePSL.hpp"
 
 #include <signal.h>
 #include <arpa/nameser.h>
@@ -167,9 +168,8 @@ String ConnectionHandler::getDomainURL(String *url) {
         domain_url = domain_url.after("://");
     }
     domain_url = domain_url.contains("/") ? domain_url.before("/") : domain_url;
-    if (domain_url.startsWith("www.")) {
-        domain_url = domain_url.after("www.");
-    }
+    domain_url = SimplePSL::getRegistrableDomain(domain_url);
+
     return domain_url;
 }
 
@@ -1069,9 +1069,7 @@ int ConnectionHandler::handleConnection(Socket &peerconn, String &ip, bool ismit
             if (checkme.isbypass && !(checkme.iscookiebypass || checkme.isvirusbypass)) {
                 DEBUG_proxy("Setting GBYPASS cookie; bypasstimestamp = ", checkme.bypasstimestamp);
                 String ud(checkme.urldomain);
-                if (ud.startsWith("www.")) {
-                    ud = ud.after("www.");
-                }
+                ud = SimplePSL::getRegistrableDomain(ud);
                 // redirect user to URL with GBYPASS parameter no longer appended
                 String outhead = "HTTP/1.1 302 Redirect\r\n";
                 outhead += "Set-Cookie: GBYPASS=";
@@ -2899,9 +2897,7 @@ bool ConnectionHandler::checkByPass(NaughtyFilter &checkme, std::shared_ptr<LOpt
             }
         } else if (ldl->fg[filtergroup]->bypass_mode != 0) {
             String ud(checkme.urldomain);
-            if (ud.startsWith("www.")) {
-                ud = ud.after("www.");
-            }
+            ud = SimplePSL::getRegistrableDomain(ud);
             if (header.isBypassCookie(ud, ldl->fg[filtergroup]->magic.c_str(),
                                       clientip.c_str(), clientuser.c_str())) {
                 DEBUG_debug(" -Bypass cookie match");
@@ -3930,9 +3926,7 @@ int ConnectionHandler::handleICAPreqmod(Socket &peerconn, String &ip, NaughtyFil
     if (checkme.isbypass && !(checkme.iscookiebypass || checkme.isvirusbypass)) {
         DEBUG_debug("Setting GBYPASS cookie; bypasstimestamp = ", checkme.bypasstimestamp);
         String ud(checkme.urldomain);
-        if (ud.startsWith("www.")) {
-            ud = ud.after("www.");
-        }
+        ud = SimplePSL::getRegistrableDomain(ud);
 
 	String outhead = "HTTP/1.1 302 Redirect\r\n";
         outhead += "Set-Cookie: GBYPASS=";
